@@ -23,7 +23,8 @@
             ".validate": "newData.isString()"
           },
           "phase": { ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|results|over)$/)" },
-          "target": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 50" }
+          "target": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 50" },
+          "appeal": { ".validate": "newData.isBoolean()" }
         },
 
         "players": {
@@ -48,8 +49,10 @@
         },
 
         "game": {
-          // העברת הפצצה ע"י מי שמחזיק אותה ("נוחש!")
-          ".write": "auth != null && root.child('rooms/' + $code + '/meta/phase').val() === 'playing' && data.child('holder').val() === auth.uid && !data.child('boom').exists() && !newData.child('boom').exists() && !newData.child('word').exists() && newData.child('seq').val() === data.child('seq').val() + 1 && newData.child('round').val() === data.child('round').val() && newData.child('startedAt').val() === data.child('startedAt').val() && newData.child('startTeam').val() === data.child('startTeam').val() && newData.child('explodeAt').val() === data.child('explodeAt').val() && root.child('fuses/' + $code + '/round').val() === data.child('round').val() && now < data.child('startedAt').val() + root.child('fuses/' + $code + '/ms').val() && newData.child('team').val() !== data.child('team').val() && root.child('rooms/' + $code + '/players/' + newData.child('holder').val() + '/team').val() === newData.child('team').val()",
+          // העברת הפצצה. תנאים משותפים: סבב פעיל, seq עולה ב-1, לקבוצה השנייה, לפני שהפתיל נגמר. ואז אחד משניים:
+          //  (1) "נוחש!" — מי שמחזיק מעביר לשחקן מהקבוצה היריבה
+          //  (2) ערעור (אם המארח הפעיל) — שחקן מהקבוצה שקיבלה מחזיר את הפצצה למי שהעביר, תוך 5 שניות (+1 חסד), פעם אחת לקבוצה בסבב
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/phase').val() === 'playing' && !data.child('boom').exists() && !newData.child('boom').exists() && !newData.child('word').exists() && newData.child('seq').val() === data.child('seq').val() + 1 && newData.child('round').val() === data.child('round').val() && newData.child('startedAt').val() === data.child('startedAt').val() && newData.child('startTeam').val() === data.child('startTeam').val() && newData.child('explodeAt').val() === data.child('explodeAt').val() && root.child('fuses/' + $code + '/round').val() === data.child('round').val() && now < data.child('startedAt').val() + root.child('fuses/' + $code + '/ms').val() && newData.child('team').val() !== data.child('team').val() && ((data.child('holder').val() === auth.uid && root.child('rooms/' + $code + '/players/' + newData.child('holder').val() + '/team').val() === newData.child('team').val() && newData.child('last/by').val() === auth.uid && newData.child('appealed/A').val() === data.child('appealed/A').val() && newData.child('appealed/B').val() === data.child('appealed/B').val()) || (root.child('rooms/' + $code + '/meta/appeal').val() === true && data.child('last/w').exists() && now < data.child('passedAt').val() + 6000 && root.child('rooms/' + $code + '/players/' + auth.uid + '/team').val() === data.child('team').val() && !data.child('appealed/' + data.child('team').val()).exists() && newData.child('appealed/' + data.child('team').val()).val() === true && newData.child('appealed/' + newData.child('team').val()).val() === data.child('appealed/' + newData.child('team').val()).val() && newData.child('holder').val() === data.child('last/by').val() && newData.child('last/by').val() === auth.uid && !newData.child('last/w').exists()))",
 
           // הפיצוץ: כל שחקן בחדר יכול לרשום אותו (גיבוי כשהמנהל לא מחובר), אבל רק אחרי שהפתיל באמת נגמר, פעם אחת, ועל מי שמחזיק עכשיו
           "boom": {

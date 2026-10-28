@@ -59,6 +59,13 @@ export function ding() {
   blip("triangle", 1320, 0.28, 0.35, 0.09);
 }
 
+// ערעור — זמזום נמוך של "טעות"
+export function buzz() {
+  if (!ready()) return;
+  blip("sawtooth", 150, 0.22, 0.3);
+  blip("sawtooth", 110, 0.3, 0.3, 0.2);
+}
+
 // פיצוץ: רעש לבן עם פילטר שנסגר + "בום" נמוך שצונח
 export function boom() {
   if (!ready()) return;

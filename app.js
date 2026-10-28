@@ -49,6 +49,7 @@ const S = {
   lastClaim: 0,
   dragging: false,
   renderPending: false,
+  appealUntil: 0,      // עד מתי כפתור הערעור מוצג אצלי (שעון שרת)
 };
 
 const FUSE_MIN = 40000, FUSE_MAX = 90000; // תואם ל-database.rules.json
@@ -56,6 +57,8 @@ const REVEAL_MS = 3000;        // כמה זמן לפני הפיצוץ חושפי
 const HOLDER_GRACE_MS = 3000;  // מחזיק שהתנתק: מחכים קצת, כדי שרענון מהיר לא יעביר את הפצצה
 const HOST_GRACE_MS = 4000;    // מנהל שהתנתק: אחרי כמה זמן מישהו אחר לוקח את התפקיד
 const BOOM_SHOW_MS = 2600;     // כמה זמן מסך הפיצוץ נשאר לפני התוצאות
+const APPEAL_MS = 5000;        // חלון הערעור אחרי "נוחש!" (השרת נותן עוד שנייה חסד, ראה database.rules.json)
+const BANNER_MS = 3000;        // כמה זמן מוצגת המילה שנוחשה
 const MIN_PER_TEAM = 2;
 const TARGETS = [5, 7, 10, 15];
 const DEFAULT_TARGET = 7;
@@ -332,6 +335,8 @@ function onRoomChange(prev) {
     S.lastBoomTry = 0;
     clearTimeout(S.boomTimer);
   }
+  // הפצצה עברה: כולם רואים מה נוחש (או שהיה ערעור), כדי שאי אפשר יהיה ללחוץ "נוחש!" סתם
+  if (g && pg && g.round === pg.round && g.seq > pg.seq && g.last && M().phase === "playing") announcePass(g);
   if (M().phase === "playing") {
     fx.keepAwake();
     // הרגע המדויק נחשף: כל הטלפונים מתזמנים את הפיצוץ לאותו רגע בשעון השרת
@@ -385,25 +390,84 @@ async function leaveRoom() {
 }
 
 // ---------- פעולות שחקן ----------
-// "נוחש!": הפצצה עוברת לבא בתור מהקבוצה היריבה. טרנזקציה + בדיקת seq = לחיצה כפולה מעבירה פעם אחת בלבד
-function passBomb(seq) {
+// "נוחש!": הפצצה עוברת לבא בתור מהקבוצה היריבה. טרנזקציה + בדיקת seq = לחיצה כפולה מעבירה פעם אחת בלבד.
+// guessed: המילה נוחשה באמת — היא נחשפת לכולם ונרשמת ביומן הסבב (מעבר בגלל ניתוק/יציאה — בלי מילה, ואי אפשר לערער עליו)
+function passBomb(seq, { guessed = false } = {}) {
+  const w = guessed && S.word?.key === `${S.code}:${G()?.round}:${seq}` ? S.word.text : null;
   return runTransaction(R("game"), (g) => {
     if (!g || g.boom || g.seq !== seq) return;
     if (g.holder !== S.me && !isHost()) return;
     const t = other(g.team);
-    const ptr = { A: 0, B: 0, ...g.ptr };
+    const prevPtr = { A: 0, B: 0, ...g.ptr };
+    const ptr = { ...prevPtr };
     const nx = nextOf(t, ptr[t]);
     if (!nx) return; // אין אף אחד מחובר בקבוצה השנייה
     ptr[t] = nx.ptr;
-    return { ...g, holder: nx.uid, team: t, seq: g.seq + 1, ptr, passedAt: serverTimestamp() };
+    const n = g.seq + 1;
+    const last = { by: g.holder, ptr: prevPtr };
+    if (w && g.holder === S.me) last.w = w;
+    const log = last.w ? { ...(g.log || {}), [`s${n}`]: { w: last.w, by: g.holder, t: g.team } } : g.log || null;
+    return { ...g, holder: nx.uid, team: t, seq: n, ptr, passedAt: serverTimestamp(), last, log };
   });
+}
+
+// ערעור: הקבוצה שקיבלה את הפצצה טוענת שלא באמת ניחשו. הפצצה חוזרת למי שהעביר (עם מילה חדשה), פעם אחת לקבוצה בכל סבב
+function appeal(seq) {
+  return runTransaction(R("game"), (g) => {
+    const myT = teamOf(S.me);
+    if (!g || g.boom || g.seq !== seq || !g.last?.w || myT !== g.team || g.appealed?.[myT]) return;
+    const n = g.seq + 1;
+    const log = { ...(g.log || {}) };
+    if (log[`s${g.seq}`]) log[`s${g.seq}`] = { ...log[`s${g.seq}`], x: true };
+    return { ...g, holder: g.last.by, team: other(g.team), seq: n, ptr: g.last.ptr || g.ptr,
+      appealed: { ...(g.appealed || {}), [myT]: true }, passedAt: serverTimestamp(),
+      last: { by: S.me, against: g.last.by, appeal: true }, log };
+  });
+}
+
+const canAppeal = (g = G()) => M()?.appeal === true && !!g?.last?.w && !g.boom && teamOf(S.me) === g.team
+  && !g.appealed?.[g.team] && serverNow() < (g.passedAt || 0) + APPEAL_MS;
+
+async function doAppeal(seq) {
+  if (S.passing) return;
+  S.passing = true;
+  try {
+    const r = await appeal(seq);
+    if (!r.committed) toast("מאוחר מדי לערער", "err");
+  } catch (e) { console.warn("appeal", e); toast("מאוחר מדי לערער", "err"); }
+  finally { S.passing = false; }
+}
+
+// באנר גדול בכל המסכים: מה נוחש, מי ערער, או מי התנתק
+let bannerTimer;
+function announcePass(g) {
+  const L = g.last;
+  let html, cls;
+  if (L.appeal) {
+    html = `🚫 ערעור של <b>${esc(nameOf(L.by))}</b>!<small>הפצצה חוזרת ל${esc(nameOf(L.against))}</small>`;
+    cls = "appeal";
+    audio.buzz();
+  } else if (L.w) {
+    html = `✅ נוחש: <b>${esc(L.w)}</b><small>${esc(nameOf(L.by))} העביר/ה ל${esc(nameOf(g.holder))}</small>`;
+    cls = "ok";
+    if (g.last.by !== S.me) audio.ding();
+  } else {
+    html = `${esc(nameOf(L.by))} לא מחובר/ת<small>הפצצה עברה ל${esc(nameOf(g.holder))}</small>`;
+    cls = "info";
+  }
+  const el = $("#banner");
+  el.className = `banner ${cls}`;
+  el.innerHTML = `<span>${html}</span>`;
+  el.hidden = false;
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => (el.hidden = true), BANNER_MS);
 }
 
 async function guessed(seq) {
   if (S.passing) return;
   S.passing = true;
   try {
-    const r = await passBomb(seq);
+    const r = await passBomb(seq, { guessed: true });
     if (r.committed) { audio.ding(); fx.vibrate(40); }
     else if (!G()?.boom) toast("אין שחקן מחובר בקבוצה השנייה", "err");
   } catch (e) {
@@ -589,6 +653,7 @@ setInterval(() => {
     }
   }
   if (S.boomUntil && Date.now() >= S.boomUntil) { S.boomUntil = 0; render(); }
+  if (S.appealUntil && now >= S.appealUntil) { S.appealUntil = 0; render(); }
   if (S.renderPending && !S.dragging) render();
   if (Date.now() - S.lastHostTick > 250) {
     S.lastHostTick = Date.now();
@@ -684,8 +749,15 @@ function settingsView() {
       <div class="setting-label">🗂️ קטגוריות</div>
       <div class="cats">${S.words.cats.map((c) => `<button type="button" class="cat ${cats[c.id] !== false ? "on" : ""}"
         data-act="cat" data-id="${c.id}" aria-pressed="${cats[c.id] !== false}">${c.emoji} ${esc(c.name)}</button>`).join("")}</div>
+    </div>
+    <div class="setting">
+      <div class="setting-label">🚫 ערעור על "נוחש!"</div>
+      <div class="seg" role="radiogroup">${[[false, "כבוי"], [true, "פעיל"]].map(([v, l]) => `<button type="button" role="radio"
+        aria-checked="${!!M().appeal === v}" class="${!!M().appeal === v ? "on" : ""}" data-act="appeal-opt" data-val="${v}">${l}</button>`).join("")}</div>
+      <p class="muted small">${APPEAL_TEXT}</p>
     </div>`;
 }
+const APPEAL_TEXT = `${APPEAL_MS / 1000} שניות אחרי "נוחש!" הקבוצה שקיבלה את הפצצה יכולה לערער, פעם אחת בכל סבב, והפצצה חוזרת למי שהעביר.`;
 
 function canStart() {
   return teamList("A", { onlineOnly: true }).length >= MIN_PER_TEAM && teamList("B", { onlineOnly: true }).length >= MIN_PER_TEAM;
@@ -726,8 +798,21 @@ function lobbyView() {
   <section class="card">
     ${teamsView({ host })}
   </section>
-  ${host ? hostControls() : `<p class="center-text muted pulse">מחכים שהמנהל יתחיל…</p>`}`;
+  ${host ? hostControls() : `${M().appeal ? `<p class="center-text muted small">🚫 ערעור פעיל: ${APPEAL_TEXT}</p>` : ""}
+  <p class="center-text muted pulse">מחכים שהמנהל יתחיל…</p>`}`;
 }
+
+// כפתור "לא נוחש!" — רק לקבוצה שקיבלה את הפצצה, רק בחלון הערעור
+function appealButton() {
+  const g = G();
+  if (!canAppeal(g)) return "";
+  S.appealUntil = g.passedAt + APPEAL_MS;
+  return `<button class="btn appeal big" data-act="appeal" data-seq="${g.seq}">🚫 לא נוחש! <small>(ערעור על "${esc(g.last.w)}")</small></button>`;
+}
+
+// מילים שנוחשו בסבב, לפי הסדר. מילה שערערו עליה — מחוקה
+const guessLog = (g) => Object.keys(g?.log || {}).sort((a, b) => a.slice(1) - b.slice(1)).map((k) => g.log[k]);
+const guessCount = (g) => guessLog(g).filter((e) => !e.x).length;
 
 // מי הבא בתור מהקבוצה היריבה (בשביל "אתה הבא!")
 function upNext() {
@@ -768,6 +853,7 @@ function playingView() {
     return `${header()}${scoreBar()}
     <section class="bomb-screen holder ${tcls(ht)}">
       <div id="bomb" class="bomb">💣</div>
+      ${appealButton()}
       <div class="muted">הפצצה אצלך! תסביר לקבוצה שלך:</div>
       <div class="word">${esc(S.word.text)}</div>
       <div class="cat-tag">${cat.emoji} ${esc(cat.name)}</div>
@@ -786,6 +872,7 @@ function playingView() {
     <div class="team-tag ${tcls(ht)}">${TEAM[ht] || ""}</div>
     <p class="hint">${!myT ? "צופה בסבב. המנהל ישבץ אותך בקבוצה" : ht === myT ? "🗣️ הקבוצה שלך מנחשת — מהר!" : "הקבוצה היריבה מנחשת. שקט!"}</p>
     ${next ? `<div class="next-me">⚡ אתה הבא בתור — תתכונן!</div>` : ""}
+    ${appealButton()}
   </section>${audioGate()}`;
 }
 
@@ -805,7 +892,9 @@ function resultsView({ big = false } = {}) {
       <p>הפצצה התפוצצה אצל <b class="${tcls(g?.boom?.team)}">${esc(nameOf(h))}</b></p>`}
     ${g?.word ? `<p>המילה הייתה: <b class="word-inline">${esc(g.word)}</b></p>` : ""}
     ${win && !over ? `<p class="point ${tcls(win)}">+1 ל${TEAM[win]}</p>` : ""}
-    <p class="muted small">${guessedText(g?.seq)} בסבב ${g?.round || ""}</p>
+    <p class="muted small">${guessedText(guessCount(g))} בסבב ${g?.round || ""}</p>
+    ${guessLog(g).length ? `<ul class="glog">${guessLog(g).map((e) => `<li class="${tcls(e.t)} ${e.x ? "x" : ""}"
+      title="${e.x ? "ערערו על המילה" : ""}">${esc(e.w)} <span class="muted">· ${esc(nameOf(e.by))}${e.x ? " 🚫" : ""}</span></li>`).join("")}</ul>` : ""}
   </section>
   ${scoreBar({ big: true })}
   ${host ? (over
@@ -849,7 +938,7 @@ function tvPlaying() {
   const ht = g.team;
   return `${tvTop()}${scoreBar({ big: true })}
   <section class="tv-play ${tcls(ht)}">
-    <div class="muted">סבב ${g.round} · ${guessedText(g.seq)}</div>
+    <div class="muted">סבב ${g.round} · ${guessedText(guessCount(g))}</div>
     <div id="bomb" class="bomb huge">💣</div>
     <div class="muted">הפצצה אצל</div>
     <div class="holder-name huge">${esc(nameOf(g.holder))}</div>
@@ -951,6 +1040,8 @@ app.addEventListener("click", async (e) => {
         break;
       }
       case "guessed": await guessed(Number(el.dataset.seq)); break;
+      case "appeal": await doAppeal(Number(el.dataset.seq)); break;
+      case "appeal-opt": if (isHost()) await set(R("meta/appeal"), el.dataset.val === "true"); break;
       case "skip": {
         const g = G();
         if (g?.holder === S.me && !g.boom) { newWord(`${S.code}:${g.round}:${g.seq}`); render(); }

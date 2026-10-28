@@ -171,6 +171,23 @@ body.tv .scorebar.big .sc b { font-size: 4.5rem; }
 .tv-play.tb { background: radial-gradient(circle at 50% 30%, #3dafff40, transparent 70%); }
 .tv-play .team-tag { font-size: 2rem; }
 
+/* ---------- ערעור ובאנר "נוחש" ---------- */
+.btn.appeal { background: #3a1414; border-color: #e5484d; color: #ffd9d9; animation: pulse 1s ease-in-out infinite; }
+.btn.appeal small { display: block; font-weight: 500; font-size: .85rem; opacity: .85; }
+.banner { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60;
+  width: min(92vw, 460px); text-align: center; padding: 14px 18px; border-radius: 18px; font-size: 1.25rem;
+  background: var(--card); border: 2px solid var(--line); box-shadow: 0 14px 40px #000c; animation: rise .25s ease-out; pointer-events: none; }
+.banner b { font-size: 1.5rem; }
+.banner small { display: block; font-size: .95rem; color: var(--muted); margin-top: 2px; }
+.banner.ok { border-color: var(--good); }
+.banner.ok b { color: var(--good); }
+.banner.appeal { border-color: #e5484d; background: #3a1414; }
+.banner.info { border-color: var(--accent2); }
+body.tv .banner { width: min(80vw, 900px); font-size: 2.4rem; padding: 24px 32px; top: 24px; bottom: auto; }
+body.tv .banner b { font-size: 3.2rem; }
+body.tv .banner small { font-size: 1.6rem; }
+@keyframes rise { from { transform: translate(-50%, 30px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
 /* ---------- boom & results ---------- */
 .boom-screen { min-height: 70dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; }
 .boom-screen h1 { font-size: 4rem; font-weight: 900; color: #ff3b1f; text-shadow: 0 0 30px #ff3b1f99; }
@@ -184,6 +201,12 @@ body.tv .scorebar.big .sc b { font-size: 4.5rem; }
 .results h1 { font-size: 2.2rem; font-weight: 900; }
 .results.big p { font-size: 2rem; }
 .results.big h1 { font-size: 4rem; }
+.glog { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+.glog li { background: var(--bg2); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: .95rem; font-weight: 700; }
+.glog li.ta { border-color: #ff6b3d66; }
+.glog li.tb { border-color: #3dafff66; }
+.glog li.x { text-decoration: line-through; opacity: .6; }
+.results.big .glog li { font-size: 1.4rem; padding: 8px 16px; }
 .trophy { font-size: 5rem; animation: wobble 1.4s ease-in-out infinite; }
 .point { font-size: 1.6rem !important; font-weight: 900; }
 

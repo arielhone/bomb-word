@@ -20,21 +20,21 @@ before(async () => {
 after(() => env.cleanup());
 
 // startedAgo: כמה מילישניות עברו מתחילת הסבב
-async function seed({ startedAgo = 1000, phase = "playing", hostOnline = true } = {}) {
+async function seed({ startedAgo = 1000, phase = "playing", hostOnline = true, appeal = false, game = {} } = {}) {
   await env.clearDatabase();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const p = (name, team, order, online = true) => ({ name, team, order, joinedAt: order, online, ready: true });
     await ctx.database().ref().set({
       rooms: {
         [ROOM]: {
-          meta: { hostUid: "host", phase, target: 7, cats: { food: true } },
+          meta: { hostUid: "host", phase, target: 7, cats: { food: true }, appeal },
           scores: { A: 0, B: 0 },
           players: {
             host: { name: "host", joinedAt: 0, online: hostOnline, spectator: true },
             alice: p("alice", "A", 1), carol: p("carol", "A", 2),
             bob: p("bob", "B", 3), dave: p("dave", "B", 4),
           },
-          game: { round: 1, startedAt: Date.now() - startedAgo, startTeam: "A", holder: "alice", team: "A", seq: 0, ptr: { A: 1, B: 0 } },
+          game: { round: 1, startedAt: Date.now() - startedAgo, startTeam: "A", holder: "alice", team: "A", seq: 0, ptr: { A: 1, B: 0 }, ...game },
         },
       },
       fuses: { [ROOM]: { round: 1, ms: FUSE } },
@@ -49,7 +49,8 @@ async function getGame() {
   await env.withSecurityRulesDisabled(async (ctx) => { g = (await ctx.database().ref(`rooms/${ROOM}/game`).get()).val(); });
   return g;
 }
-const passed = (g, over = {}) => ({ ...g, holder: "bob", team: "B", seq: g.seq + 1, ptr: { A: 1, B: 1 }, ...over });
+const passed = (g, over = {}) => ({ ...g, holder: "bob", team: "B", seq: g.seq + 1, ptr: { A: 1, B: 1 }, passedAt: Date.now(),
+  last: { by: g.holder, w: "פלאפל", ptr: g.ptr }, ...over });
 
 beforeEach(() => seed());
 
@@ -159,4 +160,49 @@ test("השתלטות על תפקיד המנהל רק כשהוא לא מחובר"
   await seed({ hostOnline: false });
   await assertFails(at("alice", "meta/hostUid").set("bob"));
   await assertSucceeds(at("alice", "meta/hostUid").set("alice"));
+});
+
+test("המחזיקה לא יכולה לזייף מי העביר או לבטל ערעורים", async () => {
+  const g = await getGame();
+  await assertFails(at("alice", "game").set(passed(g, { last: { by: "carol", w: "x" } })));
+  await assertFails(at("alice", "game").set(passed(g, { appealed: { B: true } })));
+});
+
+// ---------- ערעור ----------
+// מצב אחרי ש-alice (א') לחצה "נוחש!" והפצצה עברה ל-bob (ב')
+const afterPass = (passedAgo = 1000) => ({ holder: "bob", team: "B", seq: 1, ptr: { A: 1, B: 1 }, passedAt: Date.now() - passedAgo,
+  last: { by: "alice", w: "פלאפל", ptr: { A: 1, B: 0 } } });
+const appealed = (g, by, over = {}) => ({ ...g, holder: g.last.by, team: "A", seq: g.seq + 1, ptr: g.last.ptr, passedAt: Date.now(),
+  appealed: { ...(g.appealed || {}), B: true }, last: { by, against: g.last.by, appeal: true }, ...over });
+
+test("ערעור כבוי — אי אפשר לערער", async () => {
+  await seed({ game: afterPass() });
+  await assertFails(at("dave", "game").set(appealed(await getGame(), "dave")));
+});
+
+test("שחקן מהקבוצה שקיבלה מערער, והפצצה חוזרת למי שהעביר", async () => {
+  await seed({ appeal: true, game: afterPass() });
+  await assertSucceeds(at("dave", "game").set(appealed(await getGame(), "dave")));
+});
+
+test("הקבוצה שהעבירה לא יכולה לערער", async () => {
+  await seed({ appeal: true, game: afterPass() });
+  await assertFails(at("carol", "game").set(appealed(await getGame(), "carol")));
+});
+
+test("ערעור אחד לקבוצה בכל סבב", async () => {
+  await seed({ appeal: true, game: { ...afterPass(), appealed: { B: true } } });
+  await assertFails(at("dave", "game").set(appealed(await getGame(), "dave")));
+});
+
+test("ערעור אחרי שחלון הזמן נסגר נדחה", async () => {
+  await seed({ appeal: true, game: afterPass(7000) });
+  await assertFails(at("dave", "game").set(appealed(await getGame(), "dave")));
+});
+
+test("אי אפשר לערער על מעבר בלי מילה (ניתוק), ואי אפשר לשלוח את הפצצה למישהו אחר", async () => {
+  await seed({ appeal: true, game: { ...afterPass(), last: { by: "alice", ptr: { A: 1, B: 0 } } } });
+  await assertFails(at("dave", "game").set(appealed(await getGame(), "dave")));
+  await seed({ appeal: true, game: afterPass() });
+  await assertFails(at("dave", "game").set(appealed(await getGame(), "dave", { holder: "carol" })));
 });
