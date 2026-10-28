@@ -2,11 +2,13 @@
 // Project settings → General → Your apps → Web app → SDK setup and configuration → Config
 // חשוב: צריך גם databaseURL (מופיע אחרי שיוצרים Realtime Database בפרויקט).
 export const firebaseConfig = {
-  apiKey: "PASTE_API_KEY",
-  authDomain: "PASTE_PROJECT_ID.firebaseapp.com",
-  databaseURL: "https://PASTE_PROJECT_ID-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "PASTE_PROJECT_ID",
-  appId: "PASTE_APP_ID",
+  apiKey: "AIzaSyA63AJ0HgXDum-0dDEJEwYUPrXjEQkfGAM",
+  authDomain: "bomb-word-af859.firebaseapp.com",
+  databaseURL: "https://bomb-word-af859-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "bomb-word-af859",
+  storageBucket: "bomb-word-af859.firebasestorage.app",
+  messagingSenderId: "320586979920",
+  appId: "1:320586979920:web:dc5b8867088cd750534f55",
 };
 
 // true = עבודה מול האמולטור המקומי (לבדיקות בלבד)
