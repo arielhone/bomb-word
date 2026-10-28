@@ -60,10 +60,23 @@ test("אף אחד לא קורא את הפתיל, גם לא המנהל", async ()
   await assertFails(db("host").ref(`fuses/${ROOM}`).get());
 });
 
-test("רק המנהל כותב פתיל, ובטווח 40-90 שניות", async () => {
+test("רק המנהל כותב פתיל, ובטווח של החדר", async () => {
   await assertFails(db("alice").ref(`fuses/${ROOM}`).set({ round: 2, ms: 50000 }));
   await assertFails(db("host").ref(`fuses/${ROOM}`).set({ round: 2, ms: 10000 }));
   await assertSucceeds(db("host").ref(`fuses/${ROOM}`).set({ round: 2, ms: 50000 }));
+  // טווח ארוך: 60-120
+  await at("host", "meta").update({ fuseMin: 60, fuseMax: 120 });
+  await assertFails(db("host").ref(`fuses/${ROOM}`).set({ round: 2, ms: 50000 }));
+  await assertSucceeds(db("host").ref(`fuses/${ROOM}`).set({ round: 2, ms: 115000 }));
+  await assertFails(db("host").ref(`fuses/${ROOM}`).set({ round: 2, ms: 130000 }));
+});
+
+test("טווח פתיל: רק המנהל, ובגבולות 15-180", async () => {
+  await assertFails(at("alice", "meta").update({ fuseMin: 20, fuseMax: 45 }));
+  await assertFails(at("host", "meta").update({ fuseMin: 5, fuseMax: 45 }));
+  await assertFails(at("host", "meta").update({ fuseMin: 90, fuseMax: 300 }));
+  await assertFails(at("host", "meta").update({ fuseMin: 60, fuseMax: 50 }));
+  await assertSucceeds(at("host", "meta").update({ fuseMin: 90, fuseMax: 180 }));
 });
 
 // ---------- העברת הפצצה ----------

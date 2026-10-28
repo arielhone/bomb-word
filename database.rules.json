@@ -24,7 +24,10 @@
           },
           "phase": { ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|results|over)$/)" },
           "target": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 50" },
-          "appeal": { ".validate": "newData.isBoolean()" }
+          "appeal": { ".validate": "newData.isBoolean()" },
+          // טווח הפתיל בשניות (המנהל בוחר בלובי)
+          "fuseMin": { ".validate": "newData.isNumber() && newData.val() >= 15 && newData.val() < newData.parent().child('fuseMax').val()" },
+          "fuseMax": { ".validate": "newData.isNumber() && newData.val() <= 180" }
         },
 
         "players": {
@@ -81,7 +84,7 @@
       "$code": {
         ".read": false,
         ".write": "auth != null && root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid",
-        ".validate": "newData.child('round').isNumber() && newData.child('ms').isNumber() && newData.child('ms').val() >= 40000 && newData.child('ms').val() <= 90000"
+        ".validate": "newData.child('round').isNumber() && newData.child('ms').isNumber() && newData.child('ms').val() >= 15000 && newData.child('ms').val() <= 180000 && (!root.child('rooms/' + $code + '/meta/fuseMin').exists() || (newData.child('ms').val() >= root.child('rooms/' + $code + '/meta/fuseMin').val() * 1000 && newData.child('ms').val() <= root.child('rooms/' + $code + '/meta/fuseMax').val() * 1000))"
       }
     }
   }

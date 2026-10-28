@@ -134,6 +134,8 @@ input:focus { border-color: var(--accent); }
 .seg { display: flex; gap: 6px; }
 .seg button { flex: 1; font: inherit; font-weight: 700; color: var(--text); background: var(--bg2); border: 2px solid var(--line); border-radius: 12px; padding: 10px; cursor: pointer; }
 .seg button.on { border-color: var(--accent); background: #ff5a1f33; }
+.seg button small { display: block; font-weight: 500; font-size: .75rem; color: var(--muted); margin-top: 2px; direction: ltr; }
+.seg.fuses button { padding: 8px 4px; font-size: .9rem; }
 .cats { display: flex; flex-wrap: wrap; gap: 6px; }
 .cat { font: inherit; font-size: .9rem; color: var(--muted); background: var(--bg2); border: 2px solid var(--line); border-radius: 999px; padding: 8px 12px; cursor: pointer; }
 .cat.on { color: var(--text); border-color: var(--accent2); background: #ffc23d22; }

@@ -53,7 +53,11 @@ const S = {
   audioAsked: false,   // לחצתי "אני מוכן" בדף הזה. גם אם האודיו לא עלה (דפדפן בלי Web Audio, iOS שקטע) — לא חוסמים את המסך שוב
 };
 
-const FUSE_MIN = 40000, FUSE_MAX = 90000; // תואם ל-database.rules.json
+// טווחי הפתיל שהמנהל בוחר בלובי (שניות). במשחק עם הרבה שחקנים כדאי טווח ארוך, כדי שיותר שחקנים יגיעו לתור
+const FUSES = [[20, 45, "⚡ קצר"], [40, 90, "רגיל"], [60, 120, "ארוך"], [90, 180, "🐢 ארוך מאוד"]];
+const DEFAULT_FUSE = [40, 90];
+// הטווח של החדר במילישניות (חדר ישן בלי הגדרה — ברירת המחדל). תואם ל-database.rules.json
+const fuseRange = () => [(M()?.fuseMin ?? DEFAULT_FUSE[0]) * 1000, (M()?.fuseMax ?? DEFAULT_FUSE[1]) * 1000];
 const REVEAL_MS = 3000;        // כמה זמן לפני הפיצוץ חושפים את הרגע המדויק לכל הטלפונים
 const HOLDER_GRACE_MS = 3000;  // מחזיק שהתנתק: מחכים קצת, כדי שרענון מהיר לא יעביר את הפצצה
 const HOST_GRACE_MS = 4000;    // מנהל שהתנתק: אחרי כמה זמן מישהו אחר לוקח את התפקיד
@@ -269,7 +273,7 @@ async function createRoom(name, { spectator = false } = {}) {
   const me = { name, joinedAt: serverTimestamp(), online: true, ready: false };
   if (spectator) me.spectator = true;
   await set(ref(db, `rooms/${code}`), {
-    meta: { hostUid: S.me, phase: "lobby", target: DEFAULT_TARGET, cats, createdAt: serverTimestamp() },
+    meta: { hostUid: S.me, phase: "lobby", target: DEFAULT_TARGET, cats, fuseMin: DEFAULT_FUSE[0], fuseMax: DEFAULT_FUSE[1], createdAt: serverTimestamp() },
     scores: { A: 0, B: 0 },
     players: { [S.me]: me },
   });
@@ -532,7 +536,8 @@ async function startRound() {
   if (!nx) { startTeam = other(startTeam); nx = nextOf(startTeam, ptr[startTeam]); }
   if (!nx) return toast("אין שחקנים מחוברים בקבוצות", "err");
   ptr[startTeam] = nx.ptr;
-  const ms = FUSE_MIN + Math.floor(Math.random() * (FUSE_MAX - FUSE_MIN + 1));
+  const [min, max] = fuseRange();
+  const ms = min + Math.floor(Math.random() * (max - min + 1));
   S.fuse = { code: S.code, round, ms };
   safeSet("bomb:fuse", JSON.stringify(S.fuse)); // רענון של המנהל לא ישכח את הפתיל
   await update(ref(db), {
@@ -598,7 +603,7 @@ function hostTick() {
       return hostQuiet(() => set(R("game/explodeAt"), g.startedAt + f.ms));
     }
     // רישום הפיצוץ. בלי הפתיל (המנהל התחלף/רוענן) — מנסים כל שנייה מהמינימום, וה-rules מחליטים
-    const due = f ? g.startedAt + f.ms : g.startedAt + FUSE_MIN;
+    const due = f ? g.startedAt + f.ms : g.startedAt + fuseRange()[0];
     if (now >= due && now - S.lastBoomTry > 1000) tryBoom();
     // המחזיק התנתק או יצא — הפצצה עוברת לבא בתור
     const h = g.holder;
@@ -632,7 +637,7 @@ function memberTick() {
   } else delete S.goneSince[hu];
   if (M().phase === "playing" && g && !g.boom && now - S.lastBoomTry > 2000) {
     const late = g.explodeAt && now > g.explodeAt + 1500;
-    if (late || (hostGone && now >= g.startedAt + FUSE_MIN)) tryBoom();
+    if (late || (hostGone && now >= g.startedAt + fuseRange()[0])) tryBoom();
   }
 }
 
@@ -645,7 +650,7 @@ setInterval(() => {
       // הקצב לפי הזמן שעבר מתחילת הסבב — לא לפי מה שנשאר, כדי לא לגלות את הפתיל.
       // רק כשהרגע המדויק נחשף (3 שניות לפני) — קצב מטורף
       const elapsed = Math.max(0, now - g.startedAt);
-      const urgency = g.explodeAt ? 1 : Math.min(1, elapsed / FUSE_MAX);
+      const urgency = g.explodeAt ? 1 : Math.min(1, elapsed / fuseRange()[1]);
       const iv = g.explodeAt ? 110 : 1000 - urgency * 760;
       S.tock = !S.tock;
       audio.tick(urgency, S.tock);
@@ -748,6 +753,12 @@ function settingsView() {
         class="${n === M().target ? "on" : ""}" data-act="target" data-val="${n}">${n}</button>`).join("")}</div>
     </div>
     <div class="setting">
+      <div class="setting-label">⏱️ אורך פתיל <span class="muted">(שניות, הזמן המדויק מוגרל ונסתר)</span></div>
+      <div class="seg fuses" role="radiogroup">${FUSES.map(([a, b, l]) => { const on = a === fuseRange()[0] / 1000 && b === fuseRange()[1] / 1000;
+        return `<button type="button" role="radio" aria-checked="${on}" class="${on ? "on" : ""}" data-act="fuse" data-min="${a}" data-max="${b}">${l}<small>${a}–${b}</small></button>`; }).join("")}</div>
+      <p class="muted small">${fuseHint()}</p>
+    </div>
+    <div class="setting">
       <div class="setting-label">🗂️ קטגוריות</div>
       <div class="cats">${S.words.cats.map((c) => `<button type="button" class="cat ${cats[c.id] !== false ? "on" : ""}"
         data-act="cat" data-id="${c.id}" aria-pressed="${cats[c.id] !== false}">${c.emoji} ${esc(c.name)}</button>`).join("")}</div>
@@ -758,6 +769,12 @@ function settingsView() {
         aria-checked="${!!M().appeal === v}" class="${!!M().appeal === v ? "on" : ""}" data-act="appeal-opt" data-val="${v}">${l}</button>`).join("")}</div>
       <p class="muted small">${APPEAL_TEXT}</p>
     </div>`;
+}
+// המלצה לפי מספר השחקנים: ככל שיש יותר, כדאי פתיל ארוך יותר כדי שהפצצה תספיק להסתובב
+function fuseHint() {
+  const n = Object.keys(P()).filter(isPlayer).length;
+  const rec = n <= 5 ? 1 : n <= 8 ? 2 : 3;
+  return `${n} שחקנים — מומלץ: ${FUSES[rec][2].replace(/^\S+ /, "")}${rec === 1 ? " או קצר" : ""}`;
 }
 const APPEAL_TEXT = `${APPEAL_MS / 1000} שניות אחרי "נוחש!" הקבוצה שקיבלה את הפצצה יכולה לערער, פעם אחת בכל סבב, והפצצה חוזרת למי שהעביר.`;
 
@@ -800,7 +817,8 @@ function lobbyView() {
   <section class="card">
     ${teamsView({ host })}
   </section>
-  ${host ? hostControls() : `${M().appeal ? `<p class="center-text muted small">🚫 ערעור פעיל: ${APPEAL_TEXT}</p>` : ""}
+  ${host ? hostControls() : `<p class="center-text muted small">⏱️ פתיל: ${fuseRange()[0] / 1000}–${fuseRange()[1] / 1000} שניות · 🏁 עד ${M().target}</p>
+  ${M().appeal ? `<p class="center-text muted small">🚫 ערעור פעיל: ${APPEAL_TEXT}</p>` : ""}
   <p class="center-text muted pulse">מחכים שהמנהל יתחיל…</p>`}`;
 }
 
@@ -1044,6 +1062,7 @@ app.addEventListener("click", async (e) => {
       }
       case "guessed": await guessed(Number(el.dataset.seq)); break;
       case "appeal": await doAppeal(Number(el.dataset.seq)); break;
+      case "fuse": if (isHost()) await update(R("meta"), { fuseMin: Number(el.dataset.min), fuseMax: Number(el.dataset.max) }); break;
       case "appeal-opt": if (isHost()) await set(R("meta/appeal"), el.dataset.val === "true"); break;
       case "skip": {
         const g = G();
