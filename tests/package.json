@@ -1,0 +1,13 @@
+{
+  "name": "bomb-word-tests",
+  "private": true,
+  "description": "Tests for database.rules.json, run against the Realtime Database emulator (requires Java)",
+  "type": "module",
+  "scripts": {
+    "test": "firebase emulators:exec --only database --project demo-bomb-word \"node --test\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "firebase": "^10.12.2"
+  }
+}

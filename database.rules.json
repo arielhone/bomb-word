@@ -1,0 +1,85 @@
+{
+  // מילה-פצצה — כללי אבטחה ל-Realtime Database
+  // העיקרון: השרת שומר על הסוד (זמן הפיצוץ) ועל הוגנות העברת הפצצה.
+  //  - fuses/{CODE} נעול לקריאה לכולם. ה-rules עצמם קוראים אותו כדי להחליט אם מסירה/פיצוץ חוקיים.
+  //  - רק מי שמחזיק את הפצצה יכול להעביר אותה, רק פעם אחת לכל seq, רק לשחקן מהקבוצה היריבה ורק לפני שהפתיל נגמר.
+  //  - המנהל (meta/hostUid) יכול לכתוב הכל בחדר שלו. אף אחד לא נוגע בחדר של אחרים.
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "rooms": {
+      "$code": {
+        ".read": "auth != null",
+        // יצירת חדר חדש (רק אם הקוד פנוי), או המנהל של החדר
+        ".write": "auth != null && (data.child('meta/hostUid').val() === auth.uid || (!data.exists() && newData.child('meta/hostUid').val() === auth.uid))",
+        ".validate": "$code.matches(/^[A-HJ-NP-Z]{4}$/)",
+
+        "meta": {
+          ".validate": "newData.hasChildren(['hostUid', 'phase', 'target'])",
+          // השתלטות: שחקן מחובר לוקח את התפקיד, רק כשהמנהל לא מחובר (או יצא)
+          "hostUid": {
+            ".write": "auth != null && newData.val() === auth.uid && root.child('rooms/' + $code + '/players/' + auth.uid + '/online').val() === true && root.child('rooms/' + $code + '/players/' + data.val() + '/online').val() !== true",
+            ".validate": "newData.isString()"
+          },
+          "phase": { ".validate": "newData.isString() && newData.val().matches(/^(lobby|playing|results|over)$/)" },
+          "target": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 50" }
+        },
+
+        "players": {
+          "$uid": {
+            // כל שחקן כותב/מוחק רק את הרשומה של עצמו (המנהל — הכל, מהכלל של החדר)
+            ".write": "auth != null && auth.uid === $uid",
+            "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16" },
+            // קבוצה וסדר: רק המנהל משנה. שחקן לא יכול להעביר את עצמו
+            "team": { ".validate": "(newData.val() === 'A' || newData.val() === 'B') && newData.parent().child('name').isString() && (data.val() === newData.val() || root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid)" },
+            "order": { ".validate": "newData.isNumber() && newData.parent().child('name').isString() && (data.val() === newData.val() || root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid)" },
+            // onDisconnect של שחקן שכבר נמחק לא ייצור רשומת רפאים בלי שם
+            "online": { ".validate": "newData.isBoolean() && newData.parent().child('name').isString()" },
+            "ready": { ".validate": "newData.isBoolean() && newData.parent().child('name').isString()" },
+            "spectator": { ".validate": "newData.isBoolean()" },
+            "joinedAt": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "scores": {
+          "$t": { ".validate": "($t === 'A' || $t === 'B') && newData.isNumber()" }
+        },
+
+        "game": {
+          // העברת הפצצה ע"י מי שמחזיק אותה ("נוחש!")
+          ".write": "auth != null && root.child('rooms/' + $code + '/meta/phase').val() === 'playing' && data.child('holder').val() === auth.uid && !data.child('boom').exists() && !newData.child('boom').exists() && !newData.child('word').exists() && newData.child('seq').val() === data.child('seq').val() + 1 && newData.child('round').val() === data.child('round').val() && newData.child('startedAt').val() === data.child('startedAt').val() && newData.child('startTeam').val() === data.child('startTeam').val() && newData.child('explodeAt').val() === data.child('explodeAt').val() && root.child('fuses/' + $code + '/round').val() === data.child('round').val() && now < data.child('startedAt').val() + root.child('fuses/' + $code + '/ms').val() && newData.child('team').val() !== data.child('team').val() && root.child('rooms/' + $code + '/players/' + newData.child('holder').val() + '/team').val() === newData.child('team').val()",
+
+          // הפיצוץ: כל שחקן בחדר יכול לרשום אותו (גיבוי כשהמנהל לא מחובר), אבל רק אחרי שהפתיל באמת נגמר, פעם אחת, ועל מי שמחזיק עכשיו
+          "boom": {
+            ".write": "auth != null && root.child('rooms/' + $code + '/players/' + auth.uid).exists()",
+            ".validate": "!data.exists() && newData.child('holder').val() === root.child('rooms/' + $code + '/game/holder').val() && newData.child('team').val() === root.child('rooms/' + $code + '/game/team').val() && root.child('fuses/' + $code + '/round').val() === root.child('rooms/' + $code + '/game/round').val() && now >= root.child('rooms/' + $code + '/game/startedAt').val() + root.child('fuses/' + $code + '/ms').val()"
+          },
+          // המילה שהתפוצצה — נכתבת ע"י מי שהחזיק, רק אחרי הפיצוץ (כדי להציג בתוצאות)
+          "word": {
+            ".write": "auth != null && data.parent().child('boom/holder').val() === auth.uid",
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          }
+        },
+
+        // מילים שכבר יצאו בחדר (רק המפתח, לא המילה)
+        "used": {
+          "$w": {
+            ".write": "auth != null && root.child('rooms/' + $code + '/players/' + auth.uid).exists()",
+            ".validate": "newData.val() === true"
+          }
+        }
+      }
+    },
+
+    // הפתיל הסודי של הסבב: אף לקוח לא קורא, רק המנהל כותב
+    "fuses": {
+      "$code": {
+        ".read": false,
+        ".write": "auth != null && root.child('rooms/' + $code + '/meta/hostUid').val() === auth.uid",
+        ".validate": "newData.child('round').isNumber() && newData.child('ms').isNumber() && newData.child('ms').val() >= 40000 && newData.child('ms').val() <= 90000"
+      }
+    }
+  }
+}
