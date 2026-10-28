@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#120d0b" />
+  <title>מילה-פצצה</title>
+  <meta name="description" content="משחק מסיבות לטלפון: מסבירים מילה לקבוצה ומעבירים את הפצצה לפני שהיא מתפוצצת. נכנסים עם קוד, בלי התקנה." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💣</text></svg>" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="מילה-פצצה" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+
+  <!-- תצוגה מקדימה כששולחים קישור (וואטסאפ, טלגרם...) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="בוא לשחק: מילה-פצצה 💣" />
+  <meta property="og:description" content="מסבירים, מנחשים ומעבירים את הפצצה לפני שהיא מתפוצצת. משחק מסיבות לטלפון, בלי התקנה." />
+  <meta property="og:locale" content="he_IL" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+</head>
+<body>
+  <main id="app"><div class="center muted">טוען…</div></main>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
