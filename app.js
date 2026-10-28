@@ -50,6 +50,7 @@ const S = {
   dragging: false,
   renderPending: false,
   appealUntil: 0,      // עד מתי כפתור הערעור מוצג אצלי (שעון שרת)
+  audioAsked: false,   // לחצתי "אני מוכן" בדף הזה. גם אם האודיו לא עלה (דפדפן בלי Web Audio, iOS שקטע) — לא חוסמים את המסך שוב
 };
 
 const FUSE_MIN = 40000, FUSE_MAX = 90000; // תואם ל-database.rules.json
@@ -478,6 +479,7 @@ async function guessed(seq) {
 
 async function markReady() {
   audio.unlock();
+  S.audioAsked = true;
   fx.keepAwake();
   audio.tick(0.3);
   if (S.code && P()[S.me] && !P()[S.me].spectator) await update(R(`players/${S.me}`), { ready: true });
@@ -776,7 +778,7 @@ function hostControls() {
 
 function readyCard() {
   const p = P()[S.me];
-  if (p?.ready && audio.ready()) return `<p class="center-text good-text">✓ אתה מוכן. תשאיר את הטלפון פתוח והצליל דלוק</p>`;
+  if (p?.ready && S.audioAsked) return `<p class="center-text good-text">✓ אתה מוכן. תשאיר את הטלפון פתוח והצליל דלוק</p>`;
   return `<button class="btn ready-btn big" data-act="ready">🔊 אני מוכן</button>
     <p class="muted small center-text">מפעיל צליל ומונע מהמסך להיכבות באמצע סבב</p>`;
 }
@@ -832,7 +834,7 @@ function boomView({ big = false } = {}) {
 }
 
 function audioGate() {
-  if (audio.ready()) return "";
+  if (audio.ready() || S.audioAsked) return "";
   return `<div class="gate">
     <div class="gate-box">
       <div class="logo-bomb">💣</div>
@@ -909,7 +911,7 @@ function tvTop() {
   return `<header class="top tv-top">
     <div class="code-chip">חדר <b>${esc(S.code)}</b></div>
     ${isHost() ? '<div class="me-chip">👑 מנהל</div>' : ""}
-    ${audio.ready() ? "" : '<button class="btn small" data-act="ready">🔊 הפעל צליל</button>'}
+    ${audio.ready() || S.audioAsked ? "" : '<button class="btn small" data-act="ready">🔊 הפעל צליל</button>'}
     <button class="leave-btn" data-act="leave" aria-label="יציאה" title="יציאה">🚪</button>
   </header>`;
 }
@@ -1002,6 +1004,7 @@ app.addEventListener("click", async (e) => {
   };
   // כל לחיצה היא הזדמנות לשחרר אודיו (iOS דורש שזה יקרה בתוך לחיצה)
   if (["create", "join", "create-screen", "ready"].includes(act)) audio.unlock();
+  if (act === "create-screen") S.audioAsked = true; // מסך תצוגה: הלחיצה על פתיחת החדר מספיקה
   else audio.resume();
   try {
     switch (act) {
